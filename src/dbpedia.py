@@ -3,16 +3,20 @@ import numpy as np
 from rdflib import Graph
 from SPARQLWrapper import SPARQLWrapper, JSON, N3
 from pprint import pprint
+import pickle
+
+
+def acceptable_subject(name):
+    if ":" in name:
+        return False
+    return True
 
 
 def query(entity, entities_label, label):
-    entities_label[entity] = label
     escapes = ['(', ')', "'"]
     for escape in escapes:
         entity = entity.replace(escape, '\\' + escape)
 
-    # entity = entity.replace('(', '\(')
-    # entity = entity.replace(')', '\)')
     sparql = SPARQLWrapper('https://dbpedia.org/sparql')
     try:
         sparql.setQuery(f'''SELECT ?object WHERE {{dbr:{entity} dbo:wikiPageWikiLink ?object .}}''')
@@ -25,16 +29,25 @@ def query(entity, entities_label, label):
 
     prefix = 'http://dbpedia.org/resource/'
     results = list(map(lambda x: x['object']['value'][len(prefix):], qres['results']['bindings']))
-    print(f"querying {entity}, total dbr {len(results)}")
-    for result in results:
-        entities_label[result] = label
+    filtered_results = [result for result in results if acceptable_subject(result)]
 
-    return results
+    for result in filtered_results:
+        if label == 3:
+            if result not in entities_label:
+                entities_label[result] = label
+        else:
+            entities_label[result] = label
+
+    print(f"Finish querying {entity}, total valid dbr {len(filtered_results)}")
+
+    return filtered_results
 
 
 def BFS_layered(queue, edges, entities_label, label):
+    entities_label[queue[0]] = label
     layer = 2
-    for _ in range(layer):
+    for l in range(layer):
+        label = 3 if l == 1 else label
         new_queue = []
         for i, crt_entity in enumerate(queue):
             results = query(crt_entity, entities_label, label)
@@ -61,33 +74,42 @@ def BFS():
 
     assert len(entities) == len(entities_label), f"len(entities) and len(entities_label) not equal!"
 
-    entities_list = list(entities)
-    entities_hashmap = {entity: i for i, entity in enumerate(entities_list)}
+    entity_list = list(entities)
+    entity_hashmap = {entity: i for i, entity in enumerate(entity_list)}
 
     print(f"len(edges) = {len(edges)}")
-    edges = [edge if entities_hashmap[edge[0]] < entities_hashmap[edge[1]] else edge[::-1] for edge in edges]
+    edges = [edge if entity_hashmap[edge[0]] < entity_hashmap[edge[1]] else edge[::-1] for edge in edges]
     edges = list(set(edges))
     print(f"len(edges) = {len(edges)}")
     print(edges[:10])
 
-    edge_inds = [[entities_hashmap[edge[0]], entities_hashmap[edge[1]]] for edge in edges]
-    labels = [entities_label[entity] for entity in entities_list]
+    edge_inds = np.array([[entity_hashmap[edge[0]], entity_hashmap[edge[1]]] for edge in edges])
+    labels = np.array([entities_label[entity] for entity in entity_list])
 
-    np.save(f"data/numpy/edge_inds.npy", np.array(edge_inds))
-    np.save(f"data/numpy/node_labels.npy", np.array(labels))
- 
+    # print(labels)
+    for i in range(np.max(labels) + 1):
+        print(f"labels contain {np.sum(labels == i)} {i}")
 
-def exp():
-    results = query('List_of_manufacturing_processes')
-    print(len(results))
-    for i in range(len(results)):
-        r = query(results[i])
-        print(len(r))
-        # print(r[:3])
-        print(f"step {i}")
+    np.save(f"data/numpy/edge_inds.npy", edge_inds)
+    np.save(f"data/numpy/node_labels.npy", labels)
+
+    with open('data/pickle/entity_names.pickle', 'wb') as handle:
+        pickle.dump(entity_list, handle)
+
+    with open('data/pickle/entity_hashmap.pickle', 'wb') as handle:
+        pickle.dump(entity_hashmap, handle)
+
+
+# def exp():
+#     results = query('List_of_manufacturing_processes')
+#     print(len(results))
+#     for i in range(len(results)):
+#         r = query(results[i])
+#         print(len(r))
+#         # print(r[:3])
+#         print(f"step {i}")
  
 
 if __name__ == "__main__":
-    # query_batch(["List_of_manufacturing_processes", "Turning"])
     BFS()
  

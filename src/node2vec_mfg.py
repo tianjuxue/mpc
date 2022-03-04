@@ -9,7 +9,9 @@ from tqdm.notebook import tqdm
 from src.arguments import args
 import networkx as nx
 import numpy as np
+import pickle
 from collections import namedtuple
+from itertools import compress
 
 torch.manual_seed(0)
 
@@ -26,7 +28,7 @@ def MFG():
 
 
 def assign_masks(num_nodes):
-    train_ratio = 0.5
+    train_ratio = 0.9
     idx = torch.randperm(num_nodes)
     train_mask = torch.zeros(num_nodes, dtype=torch.bool)
     train_mask[idx[:int(train_ratio*num_nodes)]] = True
@@ -34,7 +36,7 @@ def assign_masks(num_nodes):
     return train_mask, test_mask
 
 
-def exp():
+def training_graph():
     data = MFG()
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -81,29 +83,53 @@ def exp():
 
 def plot_points():
     data = MFG()
+    colors = ['blue', 'orange', 'red', 'black']
 
-    colors = ['red', 'blue', 'orange']
-    z = np.load(f"data/numpy/embedding.npy")
+    with open('data/pickle/entity_names.pickle', 'rb') as handle:
+        entities_list = pickle.load(handle)
 
-    print(f"z.shape = {z.shape}")
+    with open('data/pickle/entity_hashmap.pickle', 'rb') as handle:
+        entity_hashmap = pickle.load(handle)
 
-    # z = TSNE(n_components=2, learning_rate=200).fit_transform(z)
+    selected_names = ['Metal', 'Polymer', 'Iron', 'Nickel', 'Selective_laser_sintering']
+    selected_inds = [entity_hashmap[name] for name in selected_names]
 
-    z = TSNE(n_components=2).fit_transform(z)
-
-    # pca = PCA(n_components=2)
-    # z = pca.fit_transform(z)
+    cache = True
+    if cache:
+        z = np.load(f"data/numpy/embedding_tsne.npy")
+    else:
+        z = np.load(f"data/numpy/embedding.npy")
+        print(f"z.shape = {z.shape}")
+        # z = TSNE(n_components=2, learning_rate=200).fit_transform(z)
+        z = TSNE(n_components=2).fit_transform(z)
+        np.save(f"data/numpy/embedding_tsne.npy", z)
 
     y = data.y.numpy()
+    fig = plt.figure(figsize=(8, 8))
+    ax = fig.add_subplot(111)
 
-    plt.figure(figsize=(8, 8))
-    for i in range(data.num_classes):
-        plt.scatter(z[y == i, 0], z[y == i, 1], s=10, color=colors[i])
+    for i in range(data.num_classes - 1):
+        line, = ax.plot(z[y == i, 0], z[y == i, 1], 'o', color=colors[i], picker=5)
+        line.names = list(compress(entities_list, y == i))
+
+    selected_z = np.take(z, selected_inds, axis=0)
+    line, = ax.plot(selected_z[:, 0], selected_z[:, 1], 'o', color='purple', picker=5)
+    line.names = selected_names
+
     plt.axis('off')
-    plt.show()
+ 
+    def on_pick(event):
+        thisline = event.artist
+        xdata, ydata = thisline.get_data()
+        ind = event.ind
+        clicked_names = [thisline.names[i] for i in ind]
+        print(f'on pick line: {xdata[ind]}, {ydata[ind]}')
+        print(f"clicked_names: {clicked_names}")
+ 
+    cid = fig.canvas.mpl_connect('pick_event', on_pick)
 
-  
 
 if __name__ == "__main__":
-    exp()
-    # plot_points()
+    # training_graph()
+    plot_points() 
+    plt.show()
